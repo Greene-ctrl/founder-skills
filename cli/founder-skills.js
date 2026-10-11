@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const SKILL_GROUPS = ['ads', 'engineering-product', 'launch', 'marketing', 'operations', 'partner', 'pmf', 'sales', 'scale', 'strategy', 'support'];
-const AGENTS = ['pi', 'codex'];
+const AGENTS = ['pi', 'codex', 'hermes'];
 
 const packageRoot = path.resolve(__dirname, '..');
 const packageJson = JSON.parse(
@@ -17,10 +17,10 @@ function usage() {
 
 Usage:
   founder-skills setup [--project <path>] [--company <name>] [--stage <stage>]
-  founder-skills install [--agent <pi|codex>] [options]
+  founder-skills install [--agent <pi|codex|hermes>] [options]
   founder-skills install <agent> [phase|project]
   founder-skills init [--project <path>] [--company <name>] [--stage <stage>]
-  founder-skills doctor [--agent <pi|codex>] [--scope <global|project>] [--project <path>] [--json]
+  founder-skills doctor [--agent <pi|codex|hermes>] [--scope <global|project>] [--project <path>] [--json]
                Without --agent, missing installs are reported and not fatal.
   founder-skills list [--phase <phase>]
   founder-skills version
@@ -28,7 +28,7 @@ Usage:
 Setup is the recommended first run: writes universal AGENTS.md guidance, seeds workspace memory, and adds native shortcuts where supported.
 
 Install options:
-  --agent, -a   Optional native shortcut target (pi | codex). Omit to install both.
+  --agent, -a   Optional native shortcut target (pi | codex | hermes). Omit to install all supported local agents.
   --phase, -p   all | ads | engineering-product | launch | marketing | operations | partner | pmf | sales | scale | strategy | support
   --scope, -s   (codex only) global | project (codex global installs ~/.codex/skills)
   --out, -o     (codex only) also write an AGENTS file for project-mode/reference use
@@ -41,11 +41,13 @@ Examples:
   npx --yes github:gvkhosla/founder-skills setup --project . --company "Acme"
   npx --yes github:gvkhosla/founder-skills install
   npx --yes github:gvkhosla/founder-skills install --agent pi
+  npx --yes github:gvkhosla/founder-skills install --agent hermes
   npx --yes github:gvkhosla/founder-skills install --agent pi --phase strategy
   npx --yes github:gvkhosla/founder-skills install --agent codex
   npx --yes github:gvkhosla/founder-skills init --project . --company "Acme"
   npx --yes github:gvkhosla/founder-skills install --agent codex --scope project --out ./AGENTS.md
   npx --yes github:gvkhosla/founder-skills doctor --agent codex
+  npx --yes github:gvkhosla/founder-skills doctor --agent hermes
   npx --yes github:gvkhosla/founder-skills list
 `);
 }
@@ -206,6 +208,8 @@ function printPostInstall({ agent, scope, targetRoot, skillCount, agentsFile }) 
     console.log('Try next: restart Codex, then type `$co-founder`.');
   } else if (agent === 'codex') {
     console.log('Try next: add/reference the AGENTS file, then ask Codex to use co-founder.');
+  } else if (agent === 'hermes') {
+    console.log('Try next: run `hermes skills list`, then ask Hermes, "Use co-founder."');
   } else {
     console.log('Try next: ask pi, "Use co-founder."');
   }
@@ -226,6 +230,33 @@ function installPi(skillDirs) {
   }
 
   printPostInstall({ agent: 'pi', scope: 'global', targetRoot, skillCount: skillDirs.length });
+}
+
+function installHermes(skillDirs) {
+  const targetRoot = path.join(os.homedir(), '.hermes', 'skills', 'founder-skills');
+  fs.mkdirSync(targetRoot, { recursive: true });
+
+  for (const skillDir of skillDirs) {
+    const skillName = path.basename(skillDir);
+    const phase = path.basename(path.dirname(skillDir));
+    const dest = path.join(targetRoot, phase, skillName);
+    copyDirContents(skillDir, dest);
+  }
+
+  const hermesGeneratedRoot = path.join(packageRoot, 'generated', 'hermes');
+  const extraDirs = ['workspace', 'sequences'];
+  for (const extra of extraDirs) {
+    const srcDir = path.join(hermesGeneratedRoot, extra);
+    if (fs.existsSync(srcDir)) {
+      copyDirContents(srcDir, path.join(targetRoot, extra));
+    }
+  }
+  const installMd = path.join(hermesGeneratedRoot, 'install.md');
+  if (fs.existsSync(installMd)) {
+    fs.copyFileSync(installMd, path.join(targetRoot, 'install.md'));
+  }
+
+  printPostInstall({ agent: 'hermes', scope: 'global', targetRoot, skillCount: skillDirs.length });
 }
 
 function installCodexSkills(skillDirs) {
@@ -348,13 +379,15 @@ function runInstall(options, positionals) {
   if (config.agent === 'all') {
     const piSkillDirs = listSkillDirs(config.phase, 'pi');
     const codexSkillDirs = listSkillDirs(config.phase, 'codex');
-    if (piSkillDirs.length === 0 || codexSkillDirs.length === 0) {
+    const hermesSkillDirs = listSkillDirs(config.phase, 'hermes');
+    if (piSkillDirs.length === 0 || codexSkillDirs.length === 0 || hermesSkillDirs.length === 0) {
       throw new Error(`No skills found for phase '${config.phase}'`);
     }
     installPi(piSkillDirs);
     installCodexSkills(codexSkillDirs);
+    installHermes(hermesSkillDirs);
     console.log('');
-    console.log('Installed current generated skills for both pi and Codex.');
+    console.log('Installed current generated skills for pi, Codex, and Hermes.');
     return;
   }
 
@@ -365,6 +398,11 @@ function runInstall(options, positionals) {
 
   if (config.agent === 'pi') {
     installPi(skillDirs);
+    return;
+  }
+
+  if (config.agent === 'hermes') {
+    installHermes(skillDirs);
     return;
   }
 
@@ -454,6 +492,14 @@ function writeUniversalAgentsFile(projectDir) {
   const existing = fs.existsSync(agentsFile) ? fs.readFileSync(agentsFile, 'utf8') : '';
   const next = upsertManagedSection(existing, 'FOUNDER-SKILLS', renderUniversalAgentsSection());
   fs.writeFileSync(agentsFile, next, 'utf8');
+
+  const hermesFile = path.join(projectDir, '.hermes.md');
+  if (fs.existsSync(hermesFile)) {
+    const hermesExisting = fs.readFileSync(hermesFile, 'utf8');
+    const hermesNext = upsertManagedSection(hermesExisting, 'FOUNDER-SKILLS', renderUniversalAgentsSection());
+    fs.writeFileSync(hermesFile, hermesNext, 'utf8');
+  }
+
   return agentsFile;
 }
 
@@ -530,6 +576,16 @@ function checkCodexProject(projectDir) {
 function checkAgentInstall(agent, scope, projectDir) {
   if (agent === 'pi') {
     return [checkSkillFile('pi', path.join(os.homedir(), '.pi', 'agent', 'skills', 'co-founder', 'SKILL.md'))];
+  }
+
+  if (agent === 'hermes') {
+    const candidates = [
+      path.join(os.homedir(), '.hermes', 'skills', 'founder-skills', 'partner', 'co-founder', 'SKILL.md'),
+      path.join(os.homedir(), '.hermes', 'skills', 'partner', 'co-founder', 'SKILL.md'),
+      path.join(os.homedir(), '.hermes', 'skills', 'co-founder', 'SKILL.md'),
+    ];
+    const found = candidates.find((filePath) => fs.existsSync(filePath));
+    return [checkSkillFile('hermes', found || candidates[0])];
   }
 
   if (agent === 'codex' && scope === 'project') {

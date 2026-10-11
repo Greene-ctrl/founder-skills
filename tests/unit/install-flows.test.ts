@@ -65,7 +65,7 @@ test("codex project install exports bundle and updates AGENTS.md", () => {
   assert.ok(fs.readFileSync(agentsFile, "utf8").includes("Founder Skills for Codex"));
 });
 
-test("public default install writes current pi and codex skills", () => {
+test("public default install writes current pi, codex, and hermes skills", () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "founder-skills-default-install-"));
 
   const output = execFileSync(process.execPath, [path.join(root, "legacy", "cli.js"), "install"], {
@@ -74,9 +74,10 @@ test("public default install writes current pi and codex skills", () => {
     stdio: "pipe",
   }).toString();
 
-  assert.match(output, /Installed current generated skills for both pi and Codex/);
+  assert.match(output, /Installed current generated skills for pi, Codex, and Hermes/);
   assert.ok(fs.existsSync(path.join(tempDir, ".pi", "agent", "skills", "co-founder", "SKILL.md")));
   assert.ok(fs.existsSync(path.join(tempDir, ".codex", "skills", "co-founder", "SKILL.md")));
+  assert.ok(fs.existsSync(path.join(tempDir, ".hermes", "skills", "founder-skills", "partner", "co-founder", "SKILL.md")));
 });
 
 test("public setup installs skills and seeds workspace memory", () => {
@@ -91,10 +92,33 @@ test("public setup installs skills and seeds workspace memory", () => {
   assert.match(output, /Setup complete/);
   assert.ok(fs.existsSync(path.join(tempDir, ".pi", "agent", "skills", "co-founder", "SKILL.md")));
   assert.ok(fs.existsSync(path.join(tempDir, ".codex", "skills", "co-founder", "SKILL.md")));
+  assert.ok(fs.existsSync(path.join(tempDir, ".hermes", "skills", "founder-skills", "partner", "co-founder", "SKILL.md")));
   assert.ok(fs.existsSync(path.join(tempDir, ".fs", "company-state.json")));
   assert.ok(fs.existsSync(path.join(tempDir, "docs", "founder-work", "startup-loop.md")));
   assert.ok(fs.readFileSync(path.join(tempDir, "AGENTS.md"), "utf8").includes("Use Founder Skills as the startup operating loop"));
   assert.equal(JSON.parse(fs.readFileSync(path.join(tempDir, ".fs", "company-state.json"), "utf8")).company.name, "Acme");
+});
+
+test("public hermes install writes global skills", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "founder-skills-hermes-cli-"));
+
+  const output = execFileSync(process.execPath, [path.join(root, "legacy", "cli.js"), "install", "--agent", "hermes"], {
+    cwd: tempDir,
+    env: { ...process.env, HOME: tempDir, USERPROFILE: tempDir },
+    stdio: "pipe",
+  }).toString();
+
+  assert.match(output, /hermes skills list/);
+  assert.match(output, /founder-skills doctor --agent hermes/);
+  assert.ok(fs.existsSync(path.join(tempDir, ".hermes", "skills", "founder-skills", "partner", "co-founder", "SKILL.md")));
+  assert.ok(fs.existsSync(path.join(tempDir, ".hermes", "skills", "founder-skills", "strategy", "problem-validator", "SKILL.md")));
+
+  const doctorOutput = execFileSync(process.execPath, [path.join(root, "legacy", "cli.js"), "doctor", "--agent", "hermes"], {
+    cwd: tempDir,
+    env: { ...process.env, HOME: tempDir, USERPROFILE: tempDir },
+    stdio: "pipe",
+  }).toString();
+  assert.match(doctorOutput, /Founder Skills checks look healthy/);
 });
 
 test("public codex install writes top-level global skills", () => {
